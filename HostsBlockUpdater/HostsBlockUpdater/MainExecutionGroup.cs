@@ -1,4 +1,5 @@
-﻿using Cauldron.Consoles;
+﻿using Cauldron.Activator;
+using Cauldron.Consoles;
 using Cauldron.Core;
 using Cauldron.Core.Collections;
 using Cauldron.Core.Extensions;
@@ -8,6 +9,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace HostsBlockUpdater
@@ -17,17 +19,23 @@ namespace HostsBlockUpdater
     {
         private DynamicEqualityComparer<HostFileLine> equalityComparer;
         private string hostFileName;
+        private IEnumerable<IFileImporter> importers;
 
         public MainExecutionGroup()
         {
+            Assemblies.LoadAssembly(new DirectoryInfo(Path.Combine(ApplicationInfo.ApplicationPath.FullName, "Importers")));
+            this.importers = Factory.CreateMany<IFileImporter>();
             this.hostFileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "Drivers", "etc", "hosts");
-            this.equalityComparer = new DynamicEqualityComparer<HostFileLine>((a, b) =>
-                string.Equals(a.IP, b.IP, StringComparison.InvariantCultureIgnoreCase) &&
-                string.Equals(a.HostName, b.HostName, StringComparison.InvariantCultureIgnoreCase));
+            this.equalityComparer = new DynamicEqualityComparer<HostFileLine>(
+                (a, b) => string.Equals(a.HostName, b.HostName, StringComparison.InvariantCultureIgnoreCase),
+                x => x.HostName.GetHashCode());
         }
 
         [Parameter("Analyses the hosts file", "analyse", "a")]
         public bool Analyse { get; set; }
+
+        [Parameter("Creates a backup of the hosts file. Requires the full path of the back-up target directory.\n!!-backup [Directory]\n!!Usage: -backup C:\\Temp", "backup", "B")]
+        public string CreateBackup { get; set; }
 
         [Parameter("Hides the console", "hide", "H")]
         public bool HideConsole { get; set; }
@@ -40,39 +48,78 @@ namespace HostsBlockUpdater
 
         public void Execute(ParameterParser parser)
         {
-            if (this.HideConsole)
-                ConsoleUtils.HideConsole();
-
-            if (this.ShowSourceUrls)
+            try
             {
-                var configs = JsonConvert.DeserializeObject<ConfigModel[]>(
-                    File.ReadAllText(Path.Combine(ApplicationInfo.ApplicationPath.FullName, "config.json")));
+                if (this.HideConsole)
+                    ConsoleUtils.HideConsole();
 
-                Console.ForegroundColor = ConsoleColor.Cyan;
+                if (!string.IsNullOrEmpty(this.CreateBackup) && !Win32Api.StartElevated(parser.Parameters))
+                {
+                    var hostsFile = new FileInfo(this.hostFileName);
 
-                foreach (var item in configs)
-                    Console.WriteLine(item.Url);
+                    if (hostsFile.Exists)
+                        hostsFile.CopyAsync(new DirectoryInfo(this.CreateBackup), "hosts_backup.txt").RunSync();
+                }
+
+                if (this.ShowSourceUrls)
+                {
+                    var configs = JsonConvert.DeserializeObject<ConfigModel[]>(
+                        File.ReadAllText(Path.Combine(ApplicationInfo.ApplicationPath.FullName, "config.json")));
+
+                    Console.ForegroundColor = ConsoleColor.Cyan;
+
+                    foreach (var item in configs)
+                        Console.WriteLine(item.Url);
+                }
+                else if (this.Update)
+                {
+                    var configs = JsonConvert.DeserializeObject<ConfigModel[]>(
+                        File.ReadAllText(Path.Combine(ApplicationInfo.ApplicationPath.FullName, "config.json")));
+
+                    var hostBody = this.GetHostsFile();
+                    this.AnalyseHosts(hostBody);
+
+                    var list = new ConcurrentList<HostFileLine>();
+                    Parallel.ForEach(configs, x => list.AddRange(this.StartImport(x)));
+                    var result = hostBody.Concat(list).Distinct(this.equalityComparer).ToArray();
+                    var whitelist = File.ReadAllLines(ApplicationInfo.ApplicationPath.GetFileAsync("whitelist.txt").RunSync().FullName);
+
+                    // Make sure that localhost has 127.0.0.1 assigned
+                    this.EnsureHostHasIp(result, "localhost", "127.0.0.1");
+                    this.EnsureHostHasIp(result, "localhost.localdomain", "127.0.0.1");
+                    this.EnsureHostHasIp(result, "local", "127.0.0.1");
+                    this.EnsureHostHasIp(result, "broadcasthost", "255.255.255.255");
+
+                    if (whitelist.Length > 0)
+                        result = result.Where(x => !whitelist.Any(y => Regex.Match(x.HostName, y, RegexOptions.IgnoreCase).Length > 0)).ToArray();
+
+                    var blacklist = File.ReadAllLines(ApplicationInfo.ApplicationPath.GetFileAsync("blacklist.txt").RunSync().FullName);
+
+                    result = result
+                            .Concat(blacklist.Select(x => new HostFileLine() { IP = "0.0.0.0", HostName = x }))
+                            .Where(x => !x.IsComment && !string.IsNullOrEmpty(x.HostName))
+                            .OrderByDescending(x => x.IP)
+                            .ThenBy(x => x.HostName.Length)
+                            .ThenBy(x => x.HostName).ToArray();
+
+                    Console.ForegroundColor = ConsoleColor.Cyan;
+                    Console.WriteLine($"The new hosts file will have {result.Count()} lines");
+
+                    if (!Win32Api.StartElevated(parser.Parameters))
+                        File.WriteAllLines(this.hostFileName, result.Select(x => x.ToString()));
+                }
+                else if (this.Analyse)
+                    this.AnalyseHosts(this.GetHostsFile());
             }
-            else if (this.Update)
+            catch
             {
-                var configs = JsonConvert.DeserializeObject<ConfigModel[]>(
-                    File.ReadAllText(Path.Combine(ApplicationInfo.ApplicationPath.FullName, "config.json")));
-
-                var list = new ConcurrentList<HostFileLine>();
-                Parallel.ForEach(configs, x => list.AddRange(this.StartImport(x)));
-                var result = list.Distinct(this.equalityComparer).Select(x => x.ToString());
-
-                Console.ForegroundColor = ConsoleColor.Cyan;
-                Console.WriteLine($"The new hosts file will have {result.Count()} lines");
-
-                if (!Win32Api.StartElevated(parser.Parameters))
-                    File.WriteAllLines(this.hostFileName, result);
+                throw;
             }
-            else if (this.Analyse)
-                this.AnalyseHosts(this.GetHostsFile());
-
-            if (this.HideConsole)
-                ConsoleUtils.ShowConsole();
+            finally
+            {
+                if (this.HideConsole)
+                    ConsoleUtils.ShowConsole();
+            }
         }
 
         private void AnalyseHosts(IEnumerable<HostFileLine> hosts)
@@ -84,7 +131,7 @@ namespace HostsBlockUpdater
             {
                 Console.ForegroundColor = ConsoleColor.Red;
 
-                if (!string.IsNullOrEmpty(line.HostName) && !line.IsComment && line.IP != "0.0.0.0")
+                if (!string.IsNullOrEmpty(line.HostName) && line.HostName != "localhost" && !line.IsComment && line.IP != "0.0.0.0")
                     Console.WriteLine($"The hosts '{line.HostName}' is not redirected to 0.0.0.0 but instead to {line.IP}");
                 else if (!string.IsNullOrEmpty(line.HostName) && line.IsComment && !string.IsNullOrEmpty(line.IP))
                     Console.WriteLine($"The hosts '{line.HostName}' is commented out.");
@@ -96,6 +143,14 @@ namespace HostsBlockUpdater
             Console.ResetColor();
         }
 
+        private void EnsureHostHasIp(IEnumerable<HostFileLine> content, string host, string ip)
+        {
+            var localHost = content.FirstOrDefault(x => !x.IsComment && string.Equals(x.HostName, host, StringComparison.InvariantCultureIgnoreCase));
+
+            if (localHost != null)
+                localHost.IP = ip;
+        }
+
         private IEnumerable<HostFileLine> GetHostsFile() =>
                     File.ReadAllLines(this.hostFileName).Select(x => new HostFileLine(x)).ToArray();
 
@@ -104,21 +159,16 @@ namespace HostsBlockUpdater
             Console.ForegroundColor = ConsoleColor.Cyan;
             Console.WriteLine("Importing from: " + config.Url);
 
-            var converterType = Assemblies.Classes.FirstOrDefault(x => x.Name.EndsWith(config.ImporterName));
+            var converter = this.importers.FirstOrDefault(x => x.GetType().Name.EndsWith(config.ImporterName));
 
-            if (converterType == null)
+            if (converter == null)
                 throw new Exception("Unable to find importer: " + config.ImporterName);
 
-            var hostBody = this.GetHostsFile();
-            var converter = converterType.AsType().CreateInstance().As<IFileImporter>();
-
-            this.AnalyseHosts(hostBody);
-
             var imported = converter.Import(new WebClient().DownloadString(config.Url));
-
-            return hostBody
-                 .Concat(imported.Select(x => new HostFileLine("0.0.0.0 " + x)))
-                 .Distinct(this.equalityComparer);
+            return imported
+                .Select(x => new HostFileLine() { IP = "0.0.0.0", HostName = x })
+                .Where(x => x.HostName.IndexOf('.') > 0)
+                .ToArray();
         }
     }
 }

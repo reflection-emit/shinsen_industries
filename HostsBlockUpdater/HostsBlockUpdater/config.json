@@ -2,5 +2,21 @@
   {
     "file-importer": "DefaultImporter",
     "update-url": "http://winhelp2002.mvps.org/hosts.txt"
+  },
+  {
+    "file-importer": "DefaultImporter",
+    "update-url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
+  },
+  {
+    "file-importer": "DefaultImporter",
+    "update-url": "https://raw.githubusercontent.com/AdAway/adaway.github.io/master/hosts.txt"
+  },
+  {
+    "file-importer": "DefaultImporter",
+    "update-url": "https://www.malwaredomainlist.com/hostslist/hosts.txt"
+  },
+  {
+    "file-importer": "DefaultImporter",
+    "update-url": "https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.Spam/hosts"
   }
 ]

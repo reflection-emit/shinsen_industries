@@ -1,9 +1,12 @@
-﻿using Cauldron.Core.Extensions;
+﻿using Cauldron.Activator;
+using Cauldron.Core.Extensions;
+using HostsBlockUpdater;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace HostsBlockUpdater.Importers
+namespace HostsBlockDefaultImporter
 {
+    [Component(typeof(IFileImporter))]
     public class DefaultImporter : IFileImporter
     {
         public IEnumerable<string> Import(string fileBody) => fileBody

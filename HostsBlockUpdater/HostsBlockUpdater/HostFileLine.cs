@@ -4,6 +4,10 @@ namespace HostsBlockUpdater
 {
     public sealed class HostFileLine
     {
+        public HostFileLine()
+        {
+        }
+
         public HostFileLine(string line)
         {
             this.IsComment = line.Trim().StartsWith("#");
@@ -19,23 +23,16 @@ namespace HostsBlockUpdater
                 this.IP = result.Count > 0 ? result[0].ToString() : "";
                 this.HostName = splitted[1].Trim();
             }
-
-            if (this.IsComment)
-                this.Line = line;
         }
 
-        public string HostName { get; set; }
-        public string IP { get; set; }
+        public string HostName { get; set; } = "";
+        public string IP { get; set; } = "";
         public bool IsComment { get; set; }
-        public string Line { get; set; }
 
         public override string ToString()
         {
-            if (!string.IsNullOrEmpty(this.Line))
-                return this.Line;
-
             if (this.IsComment)
-                return $"# {this.IP} {this.HostName}";
+                return "#";
 
             return $"{this.IP} {this.HostName}";
         }
