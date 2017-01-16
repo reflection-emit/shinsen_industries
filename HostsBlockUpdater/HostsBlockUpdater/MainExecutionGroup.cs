@@ -34,7 +34,7 @@ namespace HostsBlockUpdater
         [Parameter("Analyses the hosts file", "analyse", "a")]
         public bool Analyse { get; set; }
 
-        [Parameter("Creates a backup of the hosts file. Requires the full path of the back-up target directory.\n!!-backup [Directory]\n!!Usage: -backup C:\\Temp", "backup", "B")]
+        [Parameter("Creates a backup of the hosts file. Requires the full path of the back-up\ntarget directory.$mm$ [Directory]$ux$ C:\\Temp", "backup", "B")]
         public string CreateBackup { get; set; }
 
         [Parameter("Hides the console", "hide", "H")]
