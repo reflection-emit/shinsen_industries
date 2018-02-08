@@ -1,5 +1,5 @@
-﻿using Cauldron.Activator;
-using Cauldron.Core.Extensions;
+﻿using Cauldron;
+using Cauldron.Activator;
 using HostsBlockUpdater;
 using System.Collections.Generic;
 using System.Linq;

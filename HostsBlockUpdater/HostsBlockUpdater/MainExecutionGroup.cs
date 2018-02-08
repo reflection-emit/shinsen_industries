@@ -1,8 +1,9 @@
-﻿using Cauldron.Activator;
+﻿using Cauldron;
+using Cauldron.Activator;
 using Cauldron.Consoles;
 using Cauldron.Core;
 using Cauldron.Core.Collections;
-using Cauldron.Core.Extensions;
+using Cauldron.Core.Reflection;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
@@ -23,7 +24,12 @@ namespace HostsBlockUpdater
 
         public MainExecutionGroup()
         {
-            Assemblies.LoadAssembly(new DirectoryInfo(Path.Combine(ApplicationInfo.ApplicationPath.FullName, "Importers")));
+            var importersPath = Path.Combine(ApplicationInfo.ApplicationPath.FullName, "Importers");
+            if (!Directory.Exists(importersPath))
+                Directory.CreateDirectory(importersPath);
+
+            Assemblies.LoadAssembly(new DirectoryInfo(importersPath));
+
             this.importers = Factory.CreateMany<IFileImporter>();
             this.hostFileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "Drivers", "etc", "hosts");
             this.equalityComparer = new DynamicEqualityComparer<HostFileLine>(
@@ -53,12 +59,12 @@ namespace HostsBlockUpdater
                 if (this.HideConsole)
                     ConsoleUtils.HideConsole();
 
-                if (!string.IsNullOrEmpty(this.CreateBackup) && !Win32Api.StartElevated(parser.Parameters))
+                if (!string.IsNullOrEmpty(this.CreateBackup) && !Utils.StartElevated(parser.Parameters))
                 {
                     var hostsFile = new FileInfo(this.hostFileName);
 
                     if (hostsFile.Exists)
-                        hostsFile.CopyAsync(new DirectoryInfo(this.CreateBackup), "hosts_backup.txt").RunSync();
+                        hostsFile.CopyTo(Path.Combine(this.CreateBackup, "hosts_backup.txt"), true);
                 }
 
                 if (this.ShowSourceUrls)
@@ -82,7 +88,7 @@ namespace HostsBlockUpdater
                     var list = new ConcurrentList<HostFileLine>();
                     Parallel.ForEach(configs, x => list.AddRange(this.StartImport(x)));
                     var result = hostBody.Concat(list).Distinct(this.equalityComparer).ToArray();
-                    var whitelist = File.ReadAllLines(ApplicationInfo.ApplicationPath.GetFileAsync("whitelist.txt").RunSync().FullName);
+                    var whitelist = File.ReadAllLines(ApplicationInfo.ApplicationPath.GetFiles("whitelist.txt", SearchOption.AllDirectories).FirstOrDefault().FullName);
 
                     // Make sure that localhost has 127.0.0.1 assigned
                     this.EnsureHostHasIp(result, "localhost", "127.0.0.1");
@@ -93,7 +99,7 @@ namespace HostsBlockUpdater
                     if (whitelist.Length > 0)
                         result = result.Where(x => !whitelist.Any(y => Regex.Match(x.HostName, y, RegexOptions.IgnoreCase).Length > 0)).ToArray();
 
-                    var blacklist = File.ReadAllLines(ApplicationInfo.ApplicationPath.GetFileAsync("blacklist.txt").RunSync().FullName);
+                    var blacklist = File.ReadAllLines(ApplicationInfo.ApplicationPath.GetFiles("blacklist.txt", SearchOption.AllDirectories).FirstOrDefault().FullName);
 
                     result = result
                             .Concat(blacklist.Select(x => new HostFileLine() { IP = "0.0.0.0", HostName = x }))
@@ -105,7 +111,7 @@ namespace HostsBlockUpdater
                     Console.ForegroundColor = ConsoleColor.Cyan;
                     Console.WriteLine($"The new hosts file will have {result.Count()} lines");
 
-                    if (!Win32Api.StartElevated(parser.Parameters))
+                    if (!Utils.StartElevated(parser.Parameters))
                         File.WriteAllLines(this.hostFileName, result.Select(x => x.ToString()));
                 }
                 else if (this.Analyse)

@@ -14,8 +14,10 @@ namespace HostsBlockUpdater
         /// <param name="args">Command parameters</param>
         public static void Main(string[] args)
         {
-            var parser = new ParameterParser(new MainExecutionGroup(), new InstallationExecutionGroup());
-            parser.DescriptionColor = ConsoleColor.Cyan;
+            var parser = new ParameterParser(new MainExecutionGroup(), new InstallationExecutionGroup())
+            {
+                DescriptionColor = ConsoleColor.Cyan
+            };
 
             try
             {

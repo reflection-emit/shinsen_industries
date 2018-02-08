@@ -1,5 +1,5 @@
 ﻿using Cauldron.Consoles;
-using Cauldron.Core;
+using Cauldron.Core.Reflection;
 using Microsoft.Win32.TaskScheduler;
 using System;
 
@@ -22,7 +22,7 @@ namespace HostsBlockUpdater
 
             if (parameters.Contains(nameof(CreateATask)))
             {
-                if (!Win32Api.StartElevated(parser.Parameters))
+                if (!Utils.StartElevated(parser.Parameters))
                 {
                     var task = TaskService.Instance.GetTask(HostBlockTaskName);
 
@@ -49,7 +49,7 @@ namespace HostsBlockUpdater
             }
             else if (parameters.Contains(nameof(RemoveTask)))
             {
-                if (!Win32Api.StartElevated(parser.Parameters))
+                if (!Utils.StartElevated(parser.Parameters))
                 {
                     TaskService.Instance.RootFolder.DeleteTask(HostBlockTaskName, false);
 
